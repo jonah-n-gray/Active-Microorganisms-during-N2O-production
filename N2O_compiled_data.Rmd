@@ -1,0 +1,233 @@
+---
+title: "N2O_compiled_data"
+author: "Jonah Gray"
+date: "2024-05-06"
+output: html_document
+---
+This file compiles all the N2O data from individual timepoints.  N2O concentrations are modified to include the N2O removed via syringe when sampled.  N2O fluxes are calulated and converted into some relevant units.
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/murra/OneDrive/Desktop/Research/Experiments/Act_N2O/Licor data")
+library(pastecs)
+library(ggplot2)
+library(dplyr)
+library(MASS)
+library(tidyverse)
+```
+
+
+
+```{r}
+##importing data
+
+T1_1=read.csv("T1_1_final")
+T1_2=read.csv("T1_2_final")
+
+T2_1=read.csv("T2_1_final")
+T2_2=read.csv("T2_2_final")
+
+T3_1=read.csv("T3_1_final")
+T3_2=read.csv("T3_2_final")
+
+T4_1=read.csv("T4_1_final")
+T4_2=read.csv("T4_2_final")
+
+T5_1=read.csv("T5_1_final")
+T5_2=read.csv("T5_2_final")
+
+###adding T__1 syringe to T__2.  Makes sure that T__2 headspace n2o includes the N2O that would be there from T1
+
+
+T1_2$mg_N2O_N=T1_2$mg_N2O_N+T1_1$syringe_N2O
+T2_2$mg_N2O_N=T2_2$mg_N2O_N+T2_1$syringe_N2O
+T3_2$mg_N2O_N=T3_2$mg_N2O_N+T3_1$syringe_N2O
+T4_2$mg_N2O_N=(T4_2$mg_N2O_N)+(T4_1$syringe_N2O)
+T5_2$mg_N2O_N=T5_2$mg_N2O_N+T5_1$syringe_N2O
+
+dat=rbind(T1_1,T1_2,T2_1,T2_2,T3_1,T3_2,T4_1,T4_2,T5_1,T5_2)
+
+##adding times
+t=c(1,3,3.67,5.67,6.67,8.42,10,12,13,15)
+
+time=rep(t, each=10)
+time=time[c(1:60,62:100)]
+
+dat=cbind(dat,time)
+##head(dat)
+
+
+```
+
+```{r}
+g_dry_soil=1.5
+e_vial_radius=1.3/2
+surf_area_cm2=pi*(e_vial_radius^2)
+
+g_N2O_N_per_cm2_hr=dat$mg_N2O_N/1000/surf_area_cm2/dat$time
+
+g_N2O_N_per_ha_day=g_N2O_N_per_cm2_hr*(1*10^8)*24
+
+ug_N2O_N_per_m2_hr=g_N2O_N_per_cm2_hr*1000*1000*10000
+
+ug_N2O_N_per_g_dry_hr=dat$mg_N2O_N*1000/g_dry_soil/dat$time
+
+mg_N2O_N_per_kg_day=dat$mg_N2O_N/g_dry_soil/1000/dat$time
+
+kg_N2O_N_per_ha_hr=g_N2O_N_per_cm2_hr*(1*10^8)/1000
+
+kg_N2O_N_per_ha_yr=g_N2O_N_per_cm2_hr*8760*(1*10^8)/1000
+
+ug_N2O_N_per_g_dry=dat$mg_N2O_N*1000/g_dry_soil
+
+dat=cbind(dat,ug_N2O_N_per_g_dry_hr,g_N2O_N_per_cm2_hr,ug_N2O_N_per_g_dry)
+
+write.csv(dat, "C:/Users/murra/OneDrive/Desktop/Research/Experiments/Act_N2O/Licor data/N2O_data_5_8_25.csv")
+
+plot(time, g_N2O_N_per_ha_day)
+plot(time, ug_N2O_N_per_g_dry_hr)
+plot(time, ug_N2O_N_per_m2_hr)
+plot(time, dat$mg_N2O_N)
+```
+
+```{r}
+
+plot(time,dat$mg_N2O_N, col="red")
+x_seq=c(1:10)
+boxplot(dat$mg_N2O_N~dat$time)
+
+T1=t[c(1,3,5,7,9)]
+T1=rep(T1, each=10)
+T1=T1[c(1:30,32:50)]
+T1_N2O=dat[-c(1:10, 21:30, 41:50, 61:69, 80:89),]
+plot(T1_N2O$time,T1_N2O$mg_N2O_N, xlim=c(0,15), ylim=c(0,.05), col="forestgreen", type = "p", xlab = "Time (hr)", ylab="N2O-N (mg)")
+boxplot(T1_N2O$mg_N2O_N~T1_N2O$time)
+```
+Stats
+```{r}
+### Coef of variation
+T1_1stats=as.data.frame(stat.desc(T1_1$mg_N2O_N))
+T1_2stats=as.data.frame(stat.desc(T1_2$mg_N2O_N))
+
+T2_1stats=as.data.frame(stat.desc(T2_1$mg_N2O_N))
+T2_2stats=as.data.frame(stat.desc(T2_2$mg_N2O_N))
+
+T3_1stats=as.data.frame(stat.desc(T3_1$mg_N2O_N))
+T3_2stats=as.data.frame(stat.desc(T3_2$mg_N2O_N))
+
+T4_1stats=as.data.frame(stat.desc(T4_1$mg_N2O_N))
+T4_2stats=as.data.frame(stat.desc(T4_2$mg_N2O_N))
+
+T5_1stats=as.data.frame(stat.desc(T5_1$mg_N2O_N))
+T5_2stats=as.data.frame(stat.desc(T5_2$mg_N2O_N))
+
+
+stats=as.data.frame(t(cbind(T1_1stats,T1_2stats,T2_1stats,T2_2stats,T3_1stats,T3_2stats,T4_1stats,T4_2stats,T5_1stats,T5_2stats)))
+plot(stats$mean, stats$std.dev)
+plot(c(1,2,3,4,5,6,7,8,9,10),stats$coef.var)
+
+## slope between points
+
+lm_T1=lm(dat$mg_N2O_N[1:20]~dat$time[1:20])
+lm_T1$coefficients[2]
+
+lm_T2=lm(dat$mg_N2O_N[21:40]~dat$time[21:40])
+lm_T2$coefficients[2]
+
+lm_T3=lm(dat$mg_N2O_N[41:60]~dat$time[41:60])
+lm_T3$coefficients[2]
+
+lm_T4=lm(dat$mg_N2O_N[61:79]~dat$time[61:79])
+lm_T4$coefficients[2]
+
+lm_T5=lm(dat$mg_N2O_N[80:99]~dat$time[80:99])
+lm_T5$coefficients[2]
+
+slopes=rbind(lm_T1$coefficients[2],lm_T2$coefficients[2],lm_T3$coefficients[2],lm_T4$coefficients[2],lm_T5$coefficients[2])
+slopestats=stat.desc(slopes)
+
+
+(slopes[1,]-slopestats["mean",])/(slopestats["SE.mean",])
+
+plot(c(1,2,3,4,5),(slopes*1000), xlab="Time Point", ylab="N2O-N produced per hour", col="steelblue", type = "b")
+
+
+```
+Modelling
+```{r}
+lm=lm((dat$ug_N2O_N_per_g_dry_hr)~dat$time)
+plot(lm)
+boxcox(lm)
+summary(lm)
+
+coef(lm)
+
+plot((dat$ug_N2O_N_per_g_dry_hr)~dat$time)
+abline=(lm((dat$ug_N2O_N_per_g_dry_hr)~dat$time))
+```
+
+
+ggplotting
+
+```{r}
+data <- data.frame(Time = T1, N2O_N = T1_N2O$ug_N2O_N_per_g_dry_hr)
+ggplot(data, aes(x = Time, y = N2O_N)) +
+  geom_smooth(method = "loess", colour = "blue", fill = "gray") +
+  geom_point(colour = "darkblue") +  # Add points
+ 
+  xlim(0, 13) + ylim(0, 1.7) +  # Set x and y limits
+  xlab("Time (hr)") + ylab("ug N2O-N gdw-1 hr-1") +  # Set axis labels
+  ggtitle("N2O-N production rate") +  # Set plot title
+  theme_gray()  # Use a minimal theme, you can change this to other themes if you prefer
+
+data2=data.frame(Time=dat$time, N2O_N=dat$ug_N2O_N_per_g_dry_hr)
+ggplot(data2, aes(x = Time, y = N2O_N)) +
+  geom_smooth(method = "lm", colour = "blue", fill = "gray") +
+  geom_point(colour = "darkblue", size =2) +  # Add points
+ 
+  xlim(0, 16) + ylim(0, 2.0) +  # Set x and y limits
+  xlab("Time (hr)") + ylab("ug N2O-N gdw-1 hr-1") +  # Set axis labels
+  ggtitle("N2O-N production rate") +  # Set plot title
+  theme_gray(base_size=20)  
+```
+
+```{r}
+data3=data.frame(Time=dat$time, ug_n2o_n= dat$mg_N2O_N*1000)
+
+ggplot(data3, aes(x = Time, y = ug_n2o_n)) +
+  
+  geom_point(colour = "darkblue", size =2) +  # Add points
+ 
+  xlim(0, 16) + ylim(0, 45.0) +  # Set x and y limits
+  xlab("Time (hr)") + ylab("ug N2O-N") +  # Set axis labels
+  ggtitle("N2O-N accumulation") +  # Set plot title
+  theme_gray(base_size=20)  
+```
+
+recaluculating fluxes by vial by time point
+```{r}
+###N2O fluxes were calculated by: (("T2 ug N2O-N" - "T1 ug N2O-N")/ (T2 - T1)) / grams dry soil
+### midpoints are: T2 - T1 / 2
+### each replicate was sampled 2 times for N2O, T1 and T2
+N2O_flux_midpoint=read.csv("N2O_flux_midpoint.csv")
+
+data2=data.frame(Time=dat$time, N2O_N=dat$ug_N2O_N_per_g_dry_hr)
+
+ggplot(N2O_flux_midpoint, aes(x = midpoint.hr, y = ug_N2O_N_per_g_dryhr)) +
+  geom_smooth(method = "lm", colour = "blue", fill = "gray") +
+  geom_point(colour = "darkblue", size =3) +  # Add points
+ 
+  xlim(0, 16) + ylim(0, 4.0) +  # Set x and y limits
+  xlab("Time (hr)") + ylab("ug N2O-N gdw-1 hr-1") +  # Set axis labels
+  ggtitle("N2O-N production rate") +  # Set plot title
+  theme_classic()+ theme(title = element_text(size = 25),
+        axis.text = element_text(size = 20))+
+  theme(axis.title.x = element_text(size = 25), 
+        axis.title.y = element_text(size = 25))
+
+N2O_flux_midpoint_lm=lm(dat$ug_N2O_N_per_g_dry_hr~dat$time)
+summary(N2O_flux_midpoint_lm)
+
+
+```
+
+

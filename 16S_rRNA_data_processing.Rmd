@@ -1,0 +1,389 @@
+---
+title: "16S_rRNA_data_processing"
+author: "Jonah Gray"
+date: "2025-07-28"
+output: html_document
+---
+
+Pipeline used is based on the pipeline provided by Mara Cloutier's Amplicon Workshop.
+https://github.com/maracashay/TriSocieties-Amplicon-Workshop
+https://www.youtube.com/watch?v=MotrsdzCeVQ
+
+Phyloseq objects were saved at the completion of this pipeline and used in other scripts. Some data analysis is included in this file, but replicated elsewhere.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load Packages
+
+```{r}
+library(dada2)
+library(ShortRead)
+library(Biostrings)
+library(phyloseq)
+library(corncob)
+library(DESeq2)
+library(microbiome)
+library(DECIPHER)
+library(phangorn)
+library(tibble)
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(car)
+library(vegan)
+library(RVAideMemoire)
+library(emmeans)
+```
+
+
+Set wd and check to make sure the fastq files are in the directory
+```{r}
+setwd("C:/Users/murra/OneDrive/Desktop/Research/Experiments/Act_N2O/Microbial data/Sequence_data_raw/250324_M07914_0225_000000000-M258W")
+path<- setwd("C:/Users/murra/OneDrive/Desktop/Research/Experiments/Act_N2O/Microbial data/Sequence_data_raw/250324_M07914_0225_000000000-M258W")
+
+
+#list.files(path)
+```
+
+
+Sort the forward and reverse reads #####, read in files as forward and reverse reads
+```{r}
+# read in the file names and store as F.sam and R.sam
+F.sam <- sort(list.files(path, pattern="_R1_001.fastq.gz", full.names = TRUE))
+#You should see in your global env, fnFs chr[1:20] "and the path directory"
+R.sam <- sort(list.files(path, pattern="_R2_001.fastq.gz", full.names = TRUE))
+#this is depedent on how your samples are named, Rename files in this step as necessary
+
+# Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
+sample.names <- sapply(strsplit(basename(F.sam), "_"), `[`, 1)
+sample.names
+#should see a list of the sample names
+```
+
+
+Quality check
+```{r}
+## forward reads ##
+
+plotQualityProfile(R.sam[1:4])
+# gray scale heatmap is the frequencey of each quality score at each bp p
+# green line represents the mean quality score 
+# orange lines represent the quartiles of the quality scores
+# red line shows how many reads extend to at least that bp position
+
+## reverse reads ##
+
+plotQualityProfile(R.sam[1:4])
+# do not be alarmed if the reverse reads have a poorer qualify profile, this is expected because of how the reads are sequenced with Illumina
+# we can account for this when we filter and trim the reads
+```
+
+
+Assign where filtered samples will be sent and Filter samples
+
+```{r}
+# This will place the filtered fastq files into the 'filtered' folder 
+filt_path <- file.path(path, "filtered") #you should see this in your global environment
+filtFs <- file.path(filt_path, paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(filt_path, paste0(sample.names, "_R_filt.fastq.gz"))
+
+# Filter forward and reverse reads
+# On Windows set multithread=FALSE
+
+# the commands included in this filter and trim are dependent on your specific data- especially the truncLen- because you want to trim your seqs based on the quality profiles you generated- quality scores of 30 + are good
+# so you should choose the trunclen to reflect the quality scores of your data but you can't cut too much because you need the forward and reverse reads to overlap when you merge them later
+# this information is helpful if you're using 515F/806R primers in determining bp overlap https://www.illumina.com/content/dam/illumina-marketing/documents/products/appnotes/appnote_miseq_16S.pdf
+
+out <- filterAndTrim(F.sam, filtFs, R.sam, filtRs, truncLen=c(240,240),
+                     maxN=0, maxEE=c(2,2), truncQ=2,
+                     compress=TRUE, multithread=FALSE) 
+# set multithread to FALSE if using windows
+# this step takes awhile to perform
+# setting maxN = 0 means that all ambiguios base pairs are removed
+# truncQ (default is 2), truncates reads where quality scores drop less than or equal to the number specified
+# maxEE, reads with higher expected errors than what is specified are discarded
+# setting compress to TRUE will gzip the output files 
+#multithread = FALSE on windows
+
+head(out) # you should see an abbreviated list of your samples, how many reads were used in the filter and trim command and how many reads were removed after the command
+# if you see that a lot of your reads were removed, you may need to be less conservative in the filterandTrim command
+
+```
+
+Train Dada2 to assess errors
+```{r}
+# The program has to estimate the sequencing error rate, to try and distinguish errors from true Exact Sequence Variants
+errF <- learnErrors(filtFs, multithread=FALSE)
+
+errR <- learnErrors(filtRs, multithread=FALSE)
+
+## take a look at the modeled errors
+
+plotErrors(errF, nominalQ=TRUE)
+# what you should see is that your samples track well with the predicted errors
+# you should also see that as the consensus quality score goes up, the error frequencey goes down
+
+```
+
+Dereplicate the filtered fastq files 
+```{r}
+
+# we want to dereplicate the sequences to decrease computation time for the next step
+derepFs <- derepFastq(filtFs, verbose=TRUE)
+#you should see "encountered XXXX unique sequences from XXX total sequences read
+derepRs <- derepFastq(filtRs, verbose=TRUE)
+
+# Name the derep-class objects by the sample names
+names(derepFs) <- sample.names
+names(derepRs) <- sample.names
+```
+
+Infer the sequence variants in each sample
+```{r}
+# This command goes through every sequence in your sample and removes sequences that have sequencing errors
+# the estimated error rates from step 5 are important here
+
+dadaFs <- dada(derepFs, err=errF, multithread=FALSE)
+dadaRs <- dada(derepRs, err=errR, multithread=FALSE)
+
+
+dadaFs[[25]]
+# "XXX sequence variants were inferred from XXXX input unique sequences"
+# the difference in these values is the number of sequences that were removed because they were likely to include sequencing errors 
+dadaRs[[1]]
+```
+
+
+Merge the denoised forward and reverse reads
+```{r}
+mergers <- mergePairs(dadaFs, derepFs, dadaRs, derepRs, verbose=FALSE)
+
+# Inspect the merger data.frame from the first sample
+head(mergers[[1]])
+#You should see an "abundance", "forward", "reverse", "nmismatch", "nindel", "prefer" and "accept" column
+#nmatch tells you how many base pairs overlapped between the forward and reverse reads- you want this number to be fairly high (50, 100) 
+#you should see 0's in all the rows under "nmismatch" and "nindels"
+
+
+#We can now construct a sequence table of our samples, a #
+#higher-resolution version of the ESV table produced by traditional methods.#
+
+seqtab <- makeSequenceTable(mergers)
+#you will get a message "The sequences being tabled vary in length" but ignore
+
+dim(seqtab)
+
+
+# Inspect distribution of sequence lengths
+
+table(nchar(getSequences(seqtab)))
+#you will see how variable the length of your sequences are and you'll have to decide how many different lengths you're willing to include
+
+
+#remove sequences less than 289 and greater than 296 bp in length
+seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% seq(289,296)] 
+
+table(nchar(getSequences(seqtab2)))
+```
+
+
+Remove chimeric sequences
+```{r}
+seqtab.nochim <- removeBimeraDenovo(seqtab2, method="consensus", multithread=FALSE, verbose=FALSE)
+#should get an output that says "Identified XXX bimeras out of XXX input seqs"
+#so it filtered out the bimeras (chimeras) from the table
+
+dim(seqtab.nochim)
+#there are x samples and a total of xxxx ESVs after chimeric filtering
+
+# Percent of sequences that are non-chimeric
+sum(seqtab.nochim)/sum(seqtab2)
+
+```
+
+~25% of the data is chimeric sequences
+
+
+
+Combine sequence reductions by sample from each step
+```{r}
+
+getN <- function(x) sum(getUniques(x))
+
+track <- cbind(out, sapply(dadaFs, getN), sapply(mergers, getN), rowSums(seqtab), rowSums(seqtab.nochim))
+
+# If processing a single sample, remove the sapply calls: e.g. replace sapply(dadaFs, getN) with getN(dadaFs)
+colnames(track) <- c("input", "filtered", "denoised", "merged", "tabled", "nonchim")
+rownames(track) <- sample.names
+head(track)
+# this displays how many sequences you started with in each sample, how many were filtered by the filterAndTrim command, how many were merged, and how many were non-chimeric
+# Show sequence reductions throughout pipeline
+
+```
+#####
+#####
+Assign taxonomy using silva_nr99_v138_train_set.fa.gz
+```{r}
+
+taxa <- assignTaxonomy(seqtab.nochim, ("C:/Users/murra/OneDrive/Desktop/Research/Experiments/Act_N2O/Microbial data/Sequence_data_raw/250324_M07914_0225_000000000-M258W/filtered/silva_nr99_v138_train_set.fa.gz"), multithread=FALSE)
+# check your taxonomic classifications #
+taxa.print<- taxa
+rownames(taxa.print)
+head(taxa.print)
+```
+
+Make a Phyloseq object
+```{r}
+meta <- read.csv("metadata.csv", header = TRUE, row.names = 1)
+asv.table<- otu_table(seqtab.nochim, taxa_are_rows=FALSE)
+
+#Now we can make the phyloseq object
+ps <- phyloseq(asv.table, tax_table(taxa), sample_data(meta))
+
+saveRDS(ps, file="ps.rds")
+#saves an rds file to use in other codes
+```
+
+Formatting PS for analysis:
+```{r}
+# we want to duplicate the phyloseq object, so that we can have 1 original and edit the other
+ps.1 <- ps
+
+dna <- Biostrings::DNAStringSet(taxa_names(ps.1))
+names(dna) <- taxa_names(ps.1)
+ps.1 <- merge_phyloseq(ps.1, dna)
+taxa_names(ps.1) <- paste0("ASV", seq(ntaxa(ps.1)))
+ps.1
+# Now, let's make sure that the correct information is included in our phyloseq object
+
+summary(ps.1@otu_table) # Should include asv info
+ps.1@tax_table # Should include taxonomic info
+ps.1@sam_data # Should reflect the mapping file that we imported
+
+ps.2 = subset_taxa(ps.1, Kingdom == "Bacteria" | Kingdom == "Archaea")
+# Removes anything not assigned to Bacteria or Archaea
+
+# let us see if there are any samples that have a small number of sequences
+sample_sums(ps.2)
+# while it doesn't seem to be the case, if it were we would use the following lines to remove samples with low sequence counts
+set.seed(500)
+ps.pruned <- prune_samples(sample_sums(ps.2)>=2000, ps.2)
+# check to see how many samples were removed 
+
+saveRDS(ps.pruned, ps_pruned.rds)
+```
+
+Rarefying
+
+```{r}
+# It may be appropriate for you to rarefy the dataset before computing alpha-diversity estimates
+ordered(sample_sums(ps.pruned))
+
+# now that you can look at the range of total sequences per sample you can get a better idea of whether of not a dataset should be rarefied
+# if total sequences per sample are all within an order of magnitude from eachother, we do not have to rarefy
+
+#although since there aren't one or two that are lower than the majority, rarefying to the lowest depth is okay.
+#we could remove any low ones if they are way lower than the majority. ex, one sample has 19k, rest are 50K+.  We may remove the lowest
+
+set.seed(500)
+ps.pruned=rarefy_even_depth(ps.pruned)
+
+# the following line of code transforms the absolute abundance data into relative abundance data
+ps.perc <- transform_sample_counts(ps.pruned, function(x) x / sum(x)) 
+
+```
+
+Organizing data for analysis and reading in metadata
+```{r}
+ps.active= subset_samples(ps.perc, sample_type=="a")
+ps.inactive =subset_samples(ps.perc, sample_type=="i")
+ps.all =subset_samples(ps.perc, sample_type=="a+i")
+ps.bulk =subset_samples(ps.perc, sample_type=="bulk")
+#subsetted the ps object to separtate by sample type
+
+meta <- read.csv("metadata.csv", header = TRUE, row.names = 1)
+alpha.div<-estimate_richness(ps.pruned, measures=c("Shannon", "Observed"))
+even <- evenness(ps.pruned, 'pielou')
+meta=meta[-c(43,77),]
+meta$Shannon <- paste(alpha.div$Shannon)
+meta$Observed <- paste(alpha.div$Observed)
+meta$Evenness <- even$pielou
+meta$Observed <- as.numeric(meta$Observed)
+meta$Shannon <- as.numeric(meta$Shannon)
+meta$originalID<- as.numeric(meta$originalID)
+meta$time_point<- as.numeric(meta$time_point)
+meta$cell_count<- as.numeric(meta$cell_count)
+meta$sample_type <- as.factor(meta$sample_type)
+##Had to remove meta data lines 217 and 4 becuse they had 0 reads
+
+library(tidyverse)
+meta %>% rownames_to_column(var = "Sample") %>% filter(sample_type=="bulk") -> meta_bulk
+meta %>% rownames_to_column(var = "Sample") %>% filter(sample_type=="a") ->meta_active
+meta %>% rownames_to_column(var = "Sample") %>% filter(sample_type=="i") ->meta_inactive
+meta %>% rownames_to_column(var = "Sample") %>% filter(sample_type=="a+i") ->meta_all
+
+```
+
+Data analysis
+
+Permanova statistical tests
+```{r}
+bc.asv.active <- phyloseq::distance(otu_table(ps.active), "bray")
+bc.asv.inactive <- phyloseq::distance(otu_table(ps.inactive), "bray")
+bc.asv.all= phyloseq::distance(otu_table(ps.perc), "bray")
+
+#permanova for time and sample type
+permanova_bray_all=adonis2(bc.asv.all~sample_type * time_point, data= meta, permutations = 999, method = "bray")
+summary(permanova_bray_all)
+permanova_bray_all
+
+## 21% of the variation is explained by whether the sample was active or inactive
+
+perm_active=adonis2(bc.asv.active~time_point, data= meta_active, permutations = 999, method = "bray")
+perm_inactive=adonis2(bc.asv.inactive~ time_point, data= meta_inactive, permutations = 999, method = "bray")
+
+perm_active #25% of variation is explained by time
+perm_inactive # only 5% of the variation is explained by time
+```
+
+
+Shifting to analysis of taxonomy data
+
+```{r}
+#for just looking at phylum level data
+ps.phyla.perc.active = tax_glom(ps.active, "Phylum")
+ps.phyla.perc.inactive = tax_glom(ps.inactive, "Phylum")
+melt.phylum.active <- psmelt(ps.phyla.perc.active)
+melt.phylum.inactive <- psmelt(ps.phyla.perc.inactive)
+
+#for analysis outside of phylum level data
+melt.active=psmelt(ps.active)
+melt.inactive=psmelt(ps.inactive)
+
+
+```
+
+setting relative abundance and absolute abundance
+```{r}
+### setting relative abundance to 1
+#need to do this because rare species were removed and some samples are missing
+phyl.means.active <- aggregate(Abundance~Sample+Phylum, melt.phylum.active, FUN=mean)
+phyl.means.inactive <- aggregate(Abundance~Sample+Phylum, melt.phylum.inactive, FUN=mean)
+
+#makes columns for absolute abundance
+#two columns made.  One based off of total cells sorted, the other based off of calculated cell counts per gdw
+phyl.abs.abun.active= phyl.means.active %>% left_join(meta_active, by = "Sample") %>% mutate(absolute_abundance=cell_count*Abundance) %>% mutate(abundance_per_gdw=Abundance*count_per_gdw)
+
+phyl.abs.abun.inactive= phyl.means.inactive %>% left_join(meta_inactive, by = "Sample") %>% mutate(absolute_abundance=cell_count*Abundance) %>% mutate(abundance_per_gdw=Abundance*count_per_gdw)
+
+#renames phyla with relative abundance less than .01 to "other"
+phyl.abs.abun.active$Phylum[phyl.abs.abun.active$Abundance<.01] <- "other"
+phylum=unique(phyl.abs.abun.active$Phylum)
+
+phyl.abs.abun.inactive$Phylum[!(phyl.abs.abun.inactive$Phylum %in% phylum)] <- "other"
+
+```
+
+

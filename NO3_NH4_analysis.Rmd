@@ -1,0 +1,89 @@
+---
+title: "ActN2O NO3 and NH4"
+author: "Jonah Gray"
+date: "2024-06-20"
+output: html_document
+---
+
+This file contains the code to process and analyze NO3 and NH4 concentrations in microcosm soil.  After analysis, data was exported and used in the figures file.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+```
+
+```{r}
+setwd("C:/Users/murra/OneDrive/Desktop/Research/Experiments/Act_N2O/Soil Data (water, N)")
+```
+
+adding correct times for each.  Time is the end of the incubation.
+```{r}
+t=c(3,5.67,8.42,12,15)
+time=rep(t, each=5)
+dat_no3_nh4=read.csv("Final NO3 NH4 data.csv")
+dat_no3_nh4=dat_no3_nh4[,c(1,3,4)]
+dat=as.data.frame(cbind(time,dat_no3_nh4))
+
+```
+ 
+ 
+ Linear models for NH4 and NO3
+```{r}
+lm_no3=lm(dat$Final.conc..NO3.N..mg.kg.1.soil.~dat$time)
+
+dat=dat[-9,] # removing an outlier
+lm_nh4=lm(dat$Final.conc..NH4.N..mg.kg.1.soil.~dat$time)
+
+summary(lm_no3)
+summary(lm_nh4)
+
+```
+```{r}
+data_no3 <- data.frame(Time = dat$time, mg_NO3_N = dat$Final.conc..NO3.N..mg.kg.1.soil.)
+ggplot(data_no3, aes(x = Time, y = mg_NO3_N)) +
+  geom_smooth(method = "lm", colour = "blue", fill = "gray") +
+  geom_point(colour = "darkblue") +  # Add points
+ 
+  #xlim(0, 16) + ylim(0, 170) +  # Set x and y limits
+  xlab("Time (hr)") + ylab("mg_NO3_N/kg soil") +  # Set axis labels
+  ggtitle("Soil NO3-N") +  # Set plot title
+  theme_gray()  # Use a minimal theme, you can change this to other themes if you prefer
+
+
+data_nh4 <- data.frame(Time = dat$time, mg_NH4_N = dat$Final.conc..NH4.N..mg.kg.1.soil.)
+ggplot(data_nh4, aes(x = Time, y = mg_NH4_N)) +
+  geom_smooth(method = "lm", colour = "blue", fill = "gray") +
+  geom_point(colour = "darkblue") +  # Add points
+ 
+  #xlim(0, 13) + ylim(0, 1.7) +  # Set x and y limits
+  xlab("Time (hr)") + ylab("mg_NH4_N/kg soil") +  # Set axis labels
+  ggtitle("Soil NH4-N") +  # Set plot title
+  theme_gray()  # Use a minimal theme, you can change this to other themes if you prefer
+
+
+
+
+```
+```{r}
+data_all=data.frame(Time = dat$time, mg_NH4_N = dat$Final.conc..NH4.N..mg.kg.1.soil.,mg_NO3_N = dat$Final.conc..NO3.N..mg.kg.1.soil.)
+
+ggplot(data_all, aes(x = Time)) +
+  geom_smooth(aes(y = mg_NO3_N), method = "lm", colour = "blue", fill = "gray", size=3) +
+  geom_point(aes(y = mg_NO3_N), colour = "darkblue", size = 4) +  # Add points
+  geom_smooth(aes(y = mg_NH4_N), method = "lm", colour = "maroon", fill = "gray", size = 3) +
+  geom_point(aes(y = mg_NH4_N), colour = "darkred", size =4) +  # Add points
+  scale_x_continuous(breaks = seq(0, 15, by = 3),limits = c(3, 15)) +
+  xlab("Time (hr)") + ylab("mg N/kg soil") +  # Set axis labels
+  ggtitle("Soil NH4-N and NO3-N") +  # Set plot title
+  theme_classic()+
+  theme(
+    axis.text = element_text(size = 20),
+    axis.title.x = element_text(size = 25), 
+    axis.title.y = element_text(size = 25))  # Use a minimal theme, you can change this to other themes if you prefer
+
+
+
+
+```
+ 
+ 

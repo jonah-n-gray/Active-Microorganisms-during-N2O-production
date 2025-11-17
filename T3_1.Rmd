@@ -1,0 +1,227 @@
+---
+title: "Licor Batch Script"
+author: "Jonah Gray"
+date: "2024-03-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+Set working directory 
+```{r}
+setwd("C:/Users/murra/OneDrive/Desktop/Research/Experiments/Act N20/Licor data")
+```
+
+Load in packages
+```{r}
+
+library(tidyverse)
+library(chron)
+```
+
+Load in data files
+stopwatch and licor
+```{r}
+datafile="A_TG20-01075-2024-05-02T132400.data"
+remark="T3_1"
+
+
+header=read.table(datafile, skip = 5, header = F, nrows = 1, as.is = T, sep = '\t')
+data=read.table(datafile,skip = 7, header = F, as.is = T, sep = '\t')
+colnames(data)=header
+dat=data[data$REMARK==remark,]
+dat$TIME=chron(times = dat$TIME) %>% trunc(units = 'seconds')
+dat=dat[,c(2,7,8,9,10)]
+dat$SECONDS=c(1:nrow(dat))
+
+head(dat)
+```
+Stopwatch data
+
+```{r}
+timefile="T3_1.txt"
+
+### This code ONLY works when the laps correspond to 15-20 seconds before each sample is injected.  There should only be sample start times recorded in the laps.  DO NOT LAP FOR SAMPLE END TIME! it is unnecessary and will break the calculations.
+time=read.table(timefile)
+header=c("sample_start","t_total")
+t=time[nrow(time):1,]
+t=t[,3:4]
+colnames(t)=header
+
+t$sample_start=as.difftime(t$sample_start, format = "%H:%M:%S") %>% trunc(units = 'seconds')
+
+t$sample_start=as.numeric(t$sample_start, units = "secs")
+t$t_total=as.difftime(t$t_total, format = "%H:%M:%S") %>% trunc(units = 'seconds')
+t$t_total=as.numeric(t$t_total, units = "secs")
+t=t$t_total
+t=t[1:length(t)]
+head(t)
+```
+
+Does your sample number match the amount of laps?
+```{r}
+sample_number=10
+length(t)==sample_number
+
+```
+
+If TRUE, proceed.
+
+If FALSE, remove laps that don't correspond to samples.
+
+
+Let's check if our laps line up with sample intervals.
+
+Sample intervals should begin during a period of baseline/ambient N20.  Did you open the loop and then press lap?
+
+```{r}
+plot(dat$SECONDS,dat$N2O, col="darkgreen")
+abline(v=t, col="steelblue")
+```
+
+Let's adjust t to make sure that sample intervals begin during baseline N20.
+
+If times look good, you can skip this! nullify the code using ##
+```{r}
+### make a vector in equal length to our time vector, t.  Each value value in the vector will be the added time to adjust vector t to start during baseline N2O.
+
+#t_adjust=c(0,20,0,0,15,20,0,0,15,0)
+#t=t+t_adjust
+```
+
+Let's check again
+```{r}
+plot(dat$SECONDS,dat$N2O, col="darkgreen", xlim=c(t[1],t[4]))
+abline(v=t, col="steelblue")
+abline(v=N2O_max_index, col="red")
+abline(v=(N2O_max_index[1]-15))
+abline(v=(N2O_max_index[1]-3))
+abline(v=(N2O_max_index[1]+40))
+abline(v=(N2O_max_index[1]+55))
+```
+
+Times look good! Let's create sample intervals of 120 seconds to extract the N2O data we need from dat.
+
+sample_interval=c()
+for (i in t) {
+  interval=seq(i,i+119, by=1)
+sample_interval=c(sample_interval,interval)
+
+}
+sample_interval=as.integer(sample_interval)
+
+sampledat=dat[sample_interval,]
+sampledat$rownumber=seq(1,length(sampledat$SECONDS),by=1)
+head(sampledat)
+head(dat)
+t
+
+
+Do the outputs agree? Proceed to calculating N2O
+
+Need to establish Veff: the volume of the closed loop.  This is calculated using a standard gas.
+```{r}
+### standard gas concentration in ppb
+std_gas_ppb=1000
+### standard gas volume per injection - will be the same as sample gas volume in cm^3
+sample_gas_volume=.25
+###vectors of before injection and after injection ppb 
+####replace with your values
+before=c(325,324,324,325,326)
+after=c(335,336,334,335,334)
+before=mean(before)
+after=mean(after)
+Veff=sample_gas_volume*(std_gas_ppb-after)/(after-before)
+Veff
+```
+calculate N2O 
+```{r}
+#Interval tuning parameters
+
+#interval length for pre injection N20 averaging
+q=12
+#Noise interval length to delete
+e=40
+#interval length for post injection N2O averaging
+o=15
+w=e+o
+
+#####
+
+x=1
+
+N2O_max_index=c()
+for (i in 1:(length(t)-1)) {
+max=which.max(dat$N2O[t[x]:t[x+1]])
+x=x+1
+
+N2O_max_index=c(N2O_max_index,max)}
+N2O_max_index=N2O_max_index+t
+
+x=1
+pre_ppb=c()
+for (i in 1:(length(t)-1)) {
+
+
+  pre=mean(dat$N2O[(N2O_max_index[x]-(q+3)):(N2O_max_index[x]-3)])
+    
+  x=x+1
+
+pre_ppb=c(pre_ppb,pre)}
+pre_ppb
+
+x=1
+post_ppb=c()
+for (i in 1:(length(t)-1)) {
+
+
+  post=mean(dat$N2O[(N2O_max_index[x]+e):(N2O_max_index[x]+w)])
+    
+  x=x+1
+
+post_ppb=c(post_ppb,post)}
+post_ppb
+
+N2O_ppb=((Veff*(post_ppb-pre_ppb))+(sample_gas_volume*post_ppb))/sample_gas_volume
+N2O_ppb
+
+```
+N2O in vial headspace
+```{r}
+### vial volume in L - volume of soil in L
+vial_volume=.011
+
+# number of times each vial is sampled
+s=1
+
+# sample volume in ml
+sample_gas_volume=.25
+
+#calculating N2O-N in mg in vial headspace
+mols=vial_volume/(.08206*(273+25))
+mg_N2O_N=((N2O_ppb*mols)/(10^9)*28.02*1000)
+syringe_N2O=(mg_N2O_N*sample_gas_volume*s)
+mg_N2O_N=mg_N2O_N+syringe_N2O
+mg_N2O_N
+```
+add calculations for conversions
+
+visualization
+
+```{r}
+### add any important colums to data frame
+sample=seq(1,(length(t)-1),1)
+t=t[1:10]
+sum_sampledat=data.frame(sample,t,N2O_ppb,mg_N2O_N,syringe_N2O)
+write.csv(sum_sampledat, file="T3_1_final")
+plot(t,N2O_ppb)
+hist(N2O_ppb)
+boxplot(N2O_ppb)
+boxplot(mg_N2O_N)
+
+```
+

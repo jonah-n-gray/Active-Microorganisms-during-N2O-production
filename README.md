@@ -18,10 +18,10 @@ NO3_NH4_analysis
 - Linear models were created
 
 activity_data_analysis
--BONCAT-FACS activity data was processed initially using Kaluza software.  Data sheets were exported from that software and analyzed here.
--Cell counts, percent activity and percent inactivity were analyzed here.
--Fluorescence data was calculated by day
--cell count plots figures were made here
+- BONCAT-FACS activity data was processed initially using Kaluza software.  Data sheets were exported from that software and analyzed here.
+- Cell counts, percent activity and percent inactivity were analyzed here.
+- Fluorescence data was calculated by day
+- cell count plots figures were made here
 
 meqo_analysis_cleaner
 - Code used in mEQO analysis

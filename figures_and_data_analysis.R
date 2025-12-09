@@ -101,6 +101,18 @@ ASV.means.active$Sample=as.numeric(ASV.means.active$Sample)
 meta_active$Sample=as.numeric(meta_active$Sample)
 ASV.abs.abun.active= ASV.means.active %>% left_join(meta_active, by = "Sample") %>% mutate(absolute_abundance=cell_count*Abundance) %>% mutate(abundance_per_gdw=Abundance*count_per_gdw)
 
+ASV.abs.abun.active %>%
+  filter(time_point == 5,
+         OTU %in% c("ASV1", "ASV2")) %>%
+  summarise(mean_abundance = mean(Abundance, na.rm = TRUE),sd= sd(Abundance))
+
+ASV.abs.abun.active %>%
+  filter(time_point == 5) %>%
+  summarise(mean_abundance = mean(Abundance, na.rm = TRUE), sd= sd(Abundance))
+
+ASV.abs.abun.active %>%
+  filter(Sample == "101") %>%
+  summarise(total_abundance = sum(Abundance))
 
 phyl.means.active$Sample <- as.character(phyl.means.active$Sample)
 meta_active$Sample <- as.character(meta_active$Sample)
@@ -113,9 +125,115 @@ phyl.abs.abun.active$Phylum[phyl.abs.abun.active$Abundance<.01] <- "xother"
 phylum=unique(phyl.abs.abun.active$Phylum)
 phyl.abs.abun.inactive$Phylum[!(phyl.abs.abun.inactive$Phylum %in% phylum)] <- "xother"
 
+phyl.abs.abun.active %>%
+  filter(time_point == 4,
+         Phylum %in% "Firmicutes") %>%
+  summarise(mean_abundance = mean(Abundance, na.rm = TRUE),sd= sd(Abundance))
+
+phyl.abs.abun.active %>%
+  filter(time_point == 5,
+         Phylum %in% "Firmicutes") %>%
+  summarise(mean_abundance = mean(Abundance, na.rm = TRUE),sd= sd(Abundance))
+
 alpha.div2<-estimate_richness(ps.pruned, measures=c("Chao1"))
 meta$Chao1 <- paste(alpha.div2$Chao1)
 meta %>% rownames_to_column(var = "Sample") %>% filter(sample_type=="a") ->meta_active
+
+####data analysis
+
+###observed
+one_way=aov(Observed~as.factor(sample_type), meta)
+tukey=TukeyHSD(one_way)
+summary(one_way)
+tukey=as.data.frame(tukey$`as.factor(sample_type)`)
+write.csv(tukey, "tukey_observed_sample_output.csv")
+anova=as.data.frame(summary(one_way)[[1]])
+write.csv(anova, "anova_observed_sample_output.csv")
+
+one_way=aov(Observed~as.factor(time_point), meta_active)
+tukey=TukeyHSD(one_way)
+summary(one_way)
+tukey=as.data.frame(tukey$`as.factor(time_point)`)
+write.csv(tukey, "tukey_observed_active_output.csv")
+anova=as.data.frame(summary(one_way)[[1]])
+write.csv(anova, "anova_observed_active_output.csv")
+
+one_way=aov(Observed~as.factor(time_point), meta_inactive)
+tukey=TukeyHSD(one_way)
+summary(one_way)
+tukey=as.data.frame(tukey$`as.factor(time_point)`)
+write.csv(tukey, "tukey_observed_inactive_output.csv")
+anova=as.data.frame(summary(one_way)[[1]])
+write.csv(anova, "anova_observed_inactive_output.csv")
+
+one_way=aov(Observed~as.factor(time_point), meta_all)
+tukey=TukeyHSD(one_way)
+summary(one_way)
+tukey=as.data.frame(tukey$`as.factor(time_point)`)
+write.csv(tukey, "tukey_observed_actinact_output.csv")
+anova=as.data.frame(summary(one_way)[[1]])
+write.csv(anova, "anova_observed_actinact_output.csv")
+
+### evenness
+one_way=aov(Evenness~as.factor(sample_type), meta)
+tukey=TukeyHSD(one_way)
+summary(one_way)
+tukey=as.data.frame(tukey$`as.factor(sample_type)`)
+write.csv(tukey, "tukey_Evenness_sample_output.csv")
+anova=as.data.frame(summary(one_way)[[1]])
+write.csv(anova, "anova_evenness_sample_output.csv")
+
+one_way=aov(Evenness~as.factor(time_point), meta_active)
+tukey=TukeyHSD(one_way)
+summary(one_way)
+tukey=as.data.frame(tukey$`as.factor(time_point)`)
+write.csv(tukey, "tukey_Evenness_active_output.csv")
+anova=as.data.frame(summary(one_way)[[1]])
+write.csv(anova, "anova_evenness_active_output.csv")
+
+one_way=aov(Evenness~as.factor(time_point), meta_inactive)
+tukey=TukeyHSD(one_way)
+summary(one_way)
+tukey=as.data.frame(tukey$`as.factor(time_point)`)
+write.csv(tukey, "tukey_Evenness_inactive_output.csv")
+anova=as.data.frame(summary(one_way)[[1]])
+write.csv(anova, "anova_evenness_inactive_output.csv")
+
+one_way=aov(Evenness~as.factor(time_point), meta_all)
+tukey=TukeyHSD(one_way)
+summary(one_way)
+tukey=as.data.frame(tukey$`as.factor(time_point)`)
+write.csv(tukey, "tukey_Evenness_actinact_output.csv")
+anova=as.data.frame(summary(one_way)[[1]])
+write.csv(anova, "anova_evenness_actinact_output.csv")
+
+
+###permanova on bray-curtis
+bc.asv.active <- phyloseq::distance(otu_table(ps.active), "bray")
+bc.asv.inactive <- phyloseq::distance(otu_table(ps.inactive), "bray")
+bc.asv.all= phyloseq::distance(otu_table(ps.perc), "bray")
+
+#permanova for time and sample type
+permanova_bray_all=adonis2(bc.asv.all~sample_type * time_point, data= meta, permutations = 999, method = "bray")
+summary(permanova_bray_all)
+permanova_bray_all
+permanova=permanova_bray_all
+write.csv(permanova, "permanova_permanova_bray_all_output.csv")
+
+
+## 21% of the variation is explained by whether the sample was active or inactive
+
+perm_active=adonis2(bc.asv.active~time_point, data= meta_active, permutations = 999, method = "bray")
+permanova=perm_active
+write.csv(permanova, "permanova_perm_active_output.csv")
+
+perm_inactive=adonis2(bc.asv.inactive~ time_point, data= meta_inactive, permutations = 999, method = "bray")
+permanova=perm_inactive
+write.csv(permanova, "permanova_perm_inactive_output.csv")
+
+perm_active #25% of variation is explained by time
+perm_inactive # only 5% of the variation is explained by time
+
 ###Microbiome data plots
 
 plot(Observed ~ time_point, data = meta_active)
@@ -173,6 +291,19 @@ ggsave("PCOA_BRAY_sample.pdf", PCOA_BRAY_sample, width = 4000, height = 3000, un
 
 PCOA_BRAY_sample_time=PCOA_BRAY+ stat_ellipse(geom = "polygon", type="norm", linetype= 2, alpha=0.0, aes(fill=sample_type))
 ggsave("PCOA_BRAY_sample_time.pdf", PCOA_BRAY_sample_time, width = 4000, height = 3000, units = "px")
+
+###N2O and activity plots and models
+N2O_v_activity_lm= lm(meta_active$ug_N2O_N_per_gdw_hr~meta_active$percent_gated)
+summary(N2O_v_activity_lm)
+
+N2O_v_fluor_lm= lm(meta_active$ug_N2O_N_per_gdw_hr~log(meta_active$af_median))
+summary(N2O_v_fluor_lm)
+
+activity_v_time_lm= lm(meta_active$percent_gated~meta_active$t)
+summary(activity_v_time_lm)
+
+fluor_v_time_lm= lm(log(meta_active$af_median)~meta_active$t)
+summary(fluor_v_time_lm)
 
 
 N2O_v_activity= ggplot(meta_active, aes(x = meta_active$percent_gated, y = meta_active$ug_N2O_N_per_gdw_hr)) +
@@ -232,6 +363,7 @@ activity_v_time
     geom_boxplot(colour = "darkblue",fill = "gray")+
     geom_jitter(width = 0.2, color="blue", size=3)
   
+  
 ### mirror plot moment
 act_inact=rbind(phyl.abs.abun.active,phyl.abs.abun.inactive)
 act_inact$Sample=as.numeric(act_inact$Sample)
@@ -261,6 +393,7 @@ mirror_upper=ggplot(act_inact, aes(x = Sample, y = abundance_per_gdw, fill = Phy
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ggsave("mirror_upper.pdf", mirror_upper, width = 3000, height = 2000, units = "px")
+
 
 ####BLS and meqo plots
 setwd("C:/Users/murra/OneDrive/Desktop/Research/Experiments/Act_N2O/Microbial data/Sequence_data_raw/250324_M07914_0225_000000000-M258W")
@@ -302,6 +435,8 @@ blsplot_8=ggplot(meqoplot_members8, aes(x= samplelist))+
         axis.title.y = element_text(size = 20))
 blsplot_8
 ggsave("blsplot_8.pdf", blsplot_8, width = 3000, height = 2000, units = "px")
+
+
 ###Nitrate and ammonia data
 setwd("C:/Users/murra/OneDrive/Desktop/Research/Experiments/Act_N2O/Soil Data (water, N)")
 t=c(3,5.67,8.42,12,15)
@@ -325,6 +460,7 @@ no3_nh4=ggplot(data_all, aes(x = Time)) +
     axis.text = element_text(size = 20),
     axis.title.x = element_text(size = 25), 
     axis.title.y = element_text(size = 25))  # Use a minimal theme, you can change this to other themes if you prefer
+
 
 ###Nitrous oxide data
 setwd("C:/Users/murra/OneDrive/Desktop/Research/Experiments/Act_N2O/Licor data")
@@ -380,3 +516,6 @@ N2O_flux_nh4_no3<- ggplot() +
 N2O_flux_nh4_no3
 
 ggsave("N2O_flux_nh4_no3.pdf", N2O_flux_nh4_no3, width = 3000, height = 3000, units = "px")
+
+
+

@@ -26,10 +26,11 @@ activity_data_analysis
 meqo_analysis_cleaner
 - Code used in mEQO analysis
 
-figures
+figures_and_data_analysis
 - code used to make figures in manuscript
 - compiles output files from other scripts
 - includes necessary data manipulation if data is not ready to be plotted (phyloseq objects needed preprocessing steps before plotting)
+- data analysis of some microbiome data
 
 T1_1
 - individual time point N2O data processed here

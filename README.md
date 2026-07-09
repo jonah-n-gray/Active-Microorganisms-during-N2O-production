@@ -36,3 +36,6 @@ T1_1
 - individual time point N2O data processed here
 - "T1" means time point 1, 0-3 hours,
 - "_1" means it was the first sample in time point 1
+
+Picrust_analysis_clean
+- Contains code for analyzing picrust data and producing figures
